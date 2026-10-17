@@ -58,6 +58,18 @@ const SHORT_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
 const INSTANT_RETRY_THRESHOLD_MS = 3 * 1000; // 3 seconds
 const FULL_QUOTA_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+/**
+ * Antigravity's bare "Resource has been exhausted (e.g. check quota)."
+ * Names no minute window. Continuing on that account after the first one
+ * keeps spending quota until Google disables the account. Explicit
+ * per-minute wording stays a short rate limit.
+ */
+export function isAntigravityCheckQuota429(errorMessage: string): boolean {
+  const lower = (errorMessage || "").toLowerCase();
+  if (lower.includes("per minute") || lower.includes("rpm")) return false;
+  return lower.includes("resource has been exhausted") && lower.includes("check quota");
+}
+
 export function classify429(errorMessage: string): Category {
   const lower = (errorMessage || "").toLowerCase();
 
@@ -89,6 +101,10 @@ export function classify429(errorMessage: string): Category {
   ) {
     return "rate_limited";
   }
+
+  // Bare "check quota" exhaustion: park the account. Per-minute wording
+  // already returned above.
+  if (isAntigravityCheckQuota429(lower)) return "quota_exhausted";
 
   // Check for free tier exhaustion
   if (

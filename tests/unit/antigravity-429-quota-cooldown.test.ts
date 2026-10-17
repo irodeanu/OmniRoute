@@ -35,6 +35,7 @@ import {
   FULL_QUOTA_COOLDOWN_MS,
 } from "../../open-sse/services/antigravity429Engine.ts";
 import {
+  AntigravityExecutor,
   markConnectionQuotaExhausted,
   resolveAntigravityBodyRetryHint,
 } from "../../open-sse/executors/antigravity.ts";
@@ -82,6 +83,13 @@ test("classify429: standard Gemini rate limit 'resource has been exhausted' -> r
   );
 });
 
+test("classify429: bare Antigravity 'check quota' exhaustion is quota, not a short retry", () => {
+  assert.equal(
+    classify429("Resource has been exhausted (e.g. check quota)."),
+    "quota_exhausted"
+  );
+});
+
 test("classify429: exhausted capacity with reset after 0s is rate_limited", () => {
   const message = "You have exhausted your capacity on this model. Your quota will reset after 0s.";
   const category = classify429(message);
@@ -93,6 +101,54 @@ test("classify429: exhausted capacity with reset after 0s is rate_limited", () =
 });
 
 // ── DB persistence (the missing wire — Bug #2) ───────────────────────────────
+
+test("check-quota 429 parks the connection and does not retry the same account", async () => {
+  const conn = await providersDb.createProviderConnection({
+    provider: "antigravity",
+    authType: "oauth",
+    name: "AG Check Quota",
+  });
+  const connId = (conn as { id: string }).id;
+  const executor = new AntigravityExecutor();
+  const response = new Response(
+    JSON.stringify({
+      error: {
+        code: 429,
+        message: "Resource has been exhausted (e.g. check quota).",
+        status: "RESOURCE_EXHAUSTED",
+      },
+    }),
+    { status: 429, headers: { "content-type": "application/json" } }
+  );
+  const started = Date.now();
+  const result = await executor.handleAntigravityRateLimit({
+    response,
+    log: { debug() {}, info() {}, warn() {}, error() {} },
+    urlIndex: 0,
+    retryAttemptsByUrl: { 0: 0 },
+    fallbackCount: 2,
+    url: "https://example.com/test",
+    headers: { "Content-Type": "application/json" },
+    transformedBody: {},
+    credentials: { accessToken: "test-token" },
+    stream: true,
+    signal: undefined,
+    finalHeaders: { "Content-Type": "application/json" },
+    accountId: connId,
+    creditsMode: "off",
+    creditsRetryState: { attempted: false },
+    model: "gemini-3.8-flash-low",
+  } as never);
+
+  assert.equal(result.action, "fallthrough");
+  assert.ok(Date.now() - started < 1000, "must not sleep on the same account");
+  assert.equal(providersDb.isConnectionRateLimited(connId), true);
+  const stored = await providersDb.getProviderConnectionById(connId);
+  const until = Number((stored as { rateLimitedUntil?: number | string } | null)?.rateLimitedUntil);
+  const fiveHours = 5 * 60 * 60 * 1000;
+  assert.ok(until > Date.now() + fiveHours - 60_000);
+  assert.ok(until < Date.now() + fiveHours + 60_000);
+});
 
 test("markConnectionQuotaExhausted persists 24h cooldown; isConnectionRateLimited returns true", async () => {
   const conn = await providersDb.createProviderConnection({

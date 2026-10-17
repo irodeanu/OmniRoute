@@ -12,7 +12,13 @@ import {
   getAntigravityContentHeaders,
   getAntigravityOAuthUserAgent,
 } from "../services/antigravityHeaders.ts";
-import { classify429, decide429, type Decision } from "../services/antigravity429Engine.ts";
+import {
+  classify429,
+  decide429,
+  isAntigravityCheckQuota429,
+  type Decision,
+} from "../services/antigravity429Engine.ts";
+import { applyCheckQuotaPause } from "../services/antigravityCheckQuotaPause.ts";
 import { parseRetryFromErrorText, type RetryHintProvenance } from "../services/accountFallback.ts";
 import { parseDetailedRetryHintFromJsonBody } from "../services/retryAfterJson.ts";
 import {
@@ -1578,11 +1584,19 @@ export class AntigravityExecutor extends BaseExecutor {
 
     // If no retry time in headers, try to parse from error message body
     let switchAuth = false;
+    let stopAccount = false;
     if (!retryMs) {
       const resolved = await this.tryResolveRetryFromErrorBody(ctx);
       if (resolved.kind === "return") return { action: "return", result: resolved.result };
       retryMs = resolved.retryMs;
       switchAuth = resolved.switchAuth;
+      stopAccount = resolved.stopAccount === true;
+    }
+
+    // A bare check-quota 429 parks the whole connection. Do not spend another
+    // call on this account, including the next upstream URL.
+    if (stopAccount) {
+      return { action: "fallthrough", retryMs, lastStatus: response.status };
     }
 
     // Bounded short-retry: a non-null retryAfterMs ≤ 60s covers nearly every
@@ -1650,7 +1664,7 @@ export class AntigravityExecutor extends BaseExecutor {
     ctx: AntigravityRateLimitContext
   ): Promise<
     | { kind: "return"; result: SsePassthroughResult }
-    | { kind: "resolved"; retryMs: number | null; switchAuth: boolean }
+    | { kind: "resolved"; retryMs: number | null; switchAuth: boolean; stopAccount?: boolean }
   > {
     const {
       response,
@@ -1682,6 +1696,27 @@ export class AntigravityExecutor extends BaseExecutor {
       const decision: Decision = decide429(category, parsedRetryMs);
       const retryMs = decision.retryAfterMs;
       log.debug("AG_429", `Category: ${category}, Decision: ${decision.kind} — ${decision.reason}`);
+
+      if (isAntigravityCheckQuota429(errorMessage)) {
+        let parkMs = 5 * 60 * 60 * 1000;
+        if (accountId) {
+          try {
+            const applied = await applyCheckQuotaPause(accountId);
+            parkMs = applied.pauseMs;
+            log.warn(
+              "AG_429",
+              `check-quota 429 — connection ${accountId} step ${applied.step}${applied.duplicate ? " (same incident)" : ""} for ${Math.ceil(parkMs / 1000)}s`
+            );
+          } catch {
+            try {
+              setConnectionRateLimitUntil(accountId, Date.now() + parkMs);
+            } catch {
+              // A DB miss must not keep the request on this account.
+            }
+          }
+        }
+        return { kind: "resolved", retryMs: parkMs, switchAuth: true, stopAccount: true };
+      }
 
       const creditsAlreadyInjected =
         (transformedBody as { enabledCreditTypes?: unknown }).enabledCreditTypes != null;
