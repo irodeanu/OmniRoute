@@ -62,6 +62,71 @@ test("buildCloudflareWorkerScript embeds the supplied relayAuth literal", () => 
   );
 });
 
+test("buildCloudflareWorkerScript drops the visitor IP and CF identity headers before upstream fetch", async () => {
+  const src = buildCloudflareWorkerScript("the-secret");
+  const seen: Array<{ url: string; headers: Headers }> = [];
+  const context: Record<string, unknown> = {
+    URL,
+    Headers,
+    Request,
+    Response,
+    addEventListener() {},
+    fetch: async (url: string, init: { headers?: Headers }) => {
+      seen.push({ url: String(url), headers: new Headers(init?.headers) });
+      return new Response("ok", { status: 200 });
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(`${src}\nglobalThis.__handleRelay = handleRelay;`, context);
+  const handleRelay = (context as { __handleRelay?: (request: Request) => Promise<Response> })
+    .__handleRelay;
+  assert.equal(typeof handleRelay, "function");
+  if (!handleRelay) return;
+
+  const request = new Request("https://relay.example/", {
+    headers: {
+      "x-relay-auth": "the-secret",
+      "x-relay-target": "https://generativelanguage.googleapis.com",
+      "x-relay-path": "/v1/models",
+      "cf-connecting-ip": "203.0.113.10",
+      "cf-connecting-ipv6": "2001:db8::10",
+      "cf-worker": "example.workers.dev",
+      "cf-ray": "abc-FRA",
+      "cf-ipcountry": "DE",
+      "cf-visitor": '{"scheme":"https"}',
+      "true-client-ip": "203.0.113.10",
+      "x-real-ip": "203.0.113.10",
+      "x-forwarded-for": "203.0.113.10",
+      "x-forwarded-proto": "https",
+      forwarded: "for=203.0.113.10",
+      authorization: "Bearer account-token",
+    },
+  });
+  const response = await handleRelay(request);
+  assert.equal(response.status, 200);
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].url, "https://generativelanguage.googleapis.com/v1/models");
+  for (const name of [
+    "cf-connecting-ip",
+    "cf-connecting-ipv6",
+    "cf-worker",
+    "cf-ray",
+    "cf-ipcountry",
+    "cf-visitor",
+    "true-client-ip",
+    "x-real-ip",
+    "x-forwarded-for",
+    "x-forwarded-proto",
+    "forwarded",
+    "x-relay-auth",
+    "x-relay-target",
+    "x-relay-path",
+  ]) {
+    assert.equal(seen[0].headers.get(name), null, `upstream must not receive ${name}`);
+  }
+  assert.equal(seen[0].headers.get("authorization"), "Bearer account-token");
+});
+
 test("buildCloudflareWorkerScript rejects requests without a valid x-relay-auth header", () => {
   // The worker source must enforce the same auth check as the Vercel relay:
   // a 401 short-circuit when x-relay-auth does not match the embedded token.

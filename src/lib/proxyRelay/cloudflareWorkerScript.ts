@@ -16,7 +16,10 @@
  *    the validated host. Bound to a LITERAL const name so the hardcoded call
  *    site still resolves when the SWC-minified standalone build mangles the
  *    source function's own name in `.toString()` output (#6149).
- *  - Strips Host + relay control headers before forwarding upstream.
+ *  - Strips Host, relay control headers, and the visitor-IP headers Cloudflare
+ *    attaches on the way in (CF-Connecting-IP and the forwarded-for family)
+ *    before forwarding upstream. CF-Worker is deleted too, but the Workers
+ *    runtime adds it again on every fetch(); the script cannot suppress it.
  *
  * The string template is fed to Cloudflare's PUT /accounts/{id}/workers/scripts/{name}
  * API with main_module=index.js (ESM Workers Modules format).
@@ -113,6 +116,9 @@ async function handleRelay(request) {
     "host", "connection", "content-length", "keep-alive", "proxy-connection",
     "proxy-authenticate", "proxy-authorization", "transfer-encoding", "te", "trailer", "upgrade",
     "x-relay-target", "x-relay-path", "x-relay-auth",
+    "cf-connecting-ip", "cf-connecting-ipv6", "cf-ipcountry", "cf-ray", "cf-visitor",
+    "cf-ew-via", "cf-pseudo-ipv4", "cf-worker", "cdn-loop",
+    "true-client-ip", "x-real-ip", "x-forwarded-for", "x-forwarded-proto", "forwarded",
   ].forEach((h) => headers.delete(h));
   const init = {
     method: request.method,
