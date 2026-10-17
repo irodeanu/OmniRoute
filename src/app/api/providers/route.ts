@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/db/settings";
 import { resolveResilienceSettings } from "@/lib/resilience/settings";
 import { isConnectionAutoProtected } from "@omniroute/open-sse/services/rateLimitManager/autoProtection.ts";
+import { readConnectionDailyCounts } from "@omniroute/open-sse/services/rateLimitManager/connectionDailyCap.ts";
 export const dynamic = "force-dynamic";
 import { getAuditRequestContext, logAuditEvent } from "@/lib/compliance/index";
 import {
@@ -146,6 +147,13 @@ export async function GET(request: Request) {
 
     // Hide or mask sensitive fields
     const requestQueueSettings = resolveResilienceSettings(await getSettings()).requestQueue;
+    const dailyCappedIds = connections
+      .filter((connection) => {
+        const limit = connection.rateLimitOverrides?.rpd;
+        return typeof limit === "number" && limit > 0 && typeof connection.id === "string";
+      })
+      .map((connection) => String(connection.id));
+    const dailyCounts = await readConnectionDailyCounts(dailyCappedIds);
     const safeConnections = connections.map((c) => {
       const providerSpecificData = c.providerSpecificData
         ? sanitizeProviderSpecificDataForResponse(c.providerSpecificData)
@@ -157,6 +165,10 @@ export async function GET(request: Request) {
         refreshToken: undefined,
         idToken: undefined,
         providerSpecificData,
+        dailyRequestCount:
+          typeof c.id === "string" && Object.prototype.hasOwnProperty.call(dailyCounts, c.id)
+            ? dailyCounts[c.id]
+            : undefined,
         rateLimitAutoProtected: isConnectionAutoProtected(
           {
             provider: String(c.provider),

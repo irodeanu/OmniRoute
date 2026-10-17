@@ -327,6 +327,15 @@ export default function ConnectionRow({
             <Badge variant={statusPresentation.statusVariant as any} size="sm" dot>
               {statusPresentation.statusLabel}
             </Badge>
+            {typeof connection.rateLimitOverrides?.rpd === "number" &&
+              connection.rateLimitOverrides.rpd > 0 && (
+                <span
+                  className="text-xs font-mono text-text-muted"
+                  title="Requests used today, UTC day"
+                >
+                  {connection.dailyRequestCount ?? 0}/{connection.rateLimitOverrides.rpd}
+                </span>
+              )}
             {codexPlanLabel && (
               <Badge variant="primary" size="sm" className="capitalize">
                 {codexPlanLabel}

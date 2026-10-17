@@ -37,6 +37,11 @@ import { checkQueueAdmission } from "./rateLimitManager/admission";
 import { isConnectionAutoProtected } from "./rateLimitManager/autoProtection";
 import { buildOverrideUpdates, loadOverrideMap } from "./rateLimitManager/overrideUpdates";
 import {
+  connectionDailyCapResult,
+  reserveConnectionDailyRequest,
+  resetConnectionDailyCapForTests,
+} from "./rateLimitManager/connectionDailyCap";
+import {
   markLocalRateLimitError,
   RATE_LIMIT_EXECUTION_TIMEOUT_CODE,
   RATE_LIMIT_QUEUE_WEDGED_CODE,
@@ -677,6 +682,19 @@ export async function withRateLimit(
     throw err;
   }
 
+  // rpd is not a Bottleneck reservoir (that slot is the per-minute cap). It is
+  // a separate day counter on the connection id, shared by every model family.
+  const dailyLimit = connectionRateLimitOverrides.get(connectionId)?.rpd;
+  if (typeof connectionId === "string" && connectionId && typeof dailyLimit === "number") {
+    const decision = await reserveConnectionDailyRequest(connectionId, dailyLimit);
+    if (!decision.allowed) {
+      logRateLimit(
+        `[RATE-LIMIT] ${connectionId} daily quota ${decision.count}/${decision.limit}`
+      );
+      return connectionDailyCapResult(decision);
+    }
+  }
+
   const queueBudgetMs = resolveRequestQueueMaxWaitMs(
     provider,
     undefined,
@@ -1132,6 +1150,8 @@ export async function __resetRateLimitManagerForTests() {
   }
   limiters.clear();
   enabledConnections.clear();
+  connectionRateLimitOverrides.clear();
+  resetConnectionDailyCapForTests();
   initialized = false;
   limiterLastUsed.clear();
   preservedReplacementSettings.clear();
