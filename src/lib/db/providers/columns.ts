@@ -79,6 +79,8 @@ export function normalizeBooleanColumn(value: unknown, fallback: boolean): boole
 export interface ConnectionRateLimitOverrides {
   rpm?: number;
   rpd?: number;
+  /** Requests per Monday-UTC week. Enforced beside `rpd`, not by Bottleneck. */
+  rpw?: number;
   tpm?: number;
   tpd?: number;
   minTime?: number;
@@ -115,6 +117,7 @@ export function sanitizeRateLimitOverrides(value: unknown): SanitizeOverridesRes
   const allowedKeys = new Set([
     "rpm",
     "rpd",
+    "rpw",
     "tpm",
     "tpd",
     "minTime",

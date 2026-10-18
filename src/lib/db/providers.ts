@@ -171,6 +171,7 @@ export const PROVIDER_CONNECTIONS_COLUMNS = new Set([
   "per_key_proxy_enabled",
   "quota_window_thresholds_json",
   "rate_limit_overrides_json",
+  "first_request_at",
   "created_at",
   "updated_at",
   "synced_models_at",
@@ -1113,6 +1114,32 @@ export async function touchConnectionSyncedModelsAt(id: string): Promise<void> {
  * #13389: `skipModelCatalog` — the catalog builder never reads backoff/error
  * state, so this must not bust the expensive-to-rebuild `/v1/models` cache.
  */
+/**
+ * Stamp the account's first counted request. A later call keeps the original
+ * timestamp. Returns the stored value, or null when the connection does not
+ * exist yet.
+ */
+export function recordConnectionFirstRequestAt(id: string, atIso: string): string | null {
+  if (!id || !atIso) return null;
+  const db = getDbInstance() as unknown as DbLike;
+  const existing = db
+    .prepare("SELECT first_request_at FROM provider_connections WHERE id = ?")
+    .get(id) as { first_request_at?: string | null } | undefined;
+  if (!existing) return null;
+  if (!existing.first_request_at) {
+    db.prepare(
+      `UPDATE provider_connections
+       SET first_request_at = @at
+       WHERE id = @id AND (first_request_at IS NULL OR first_request_at = '')`
+    ).run({ at: atIso, id });
+    invalidateDbCache("connections", id, { skipModelCatalog: true });
+  }
+  const stored = db
+    .prepare("SELECT first_request_at FROM provider_connections WHERE id = ?")
+    .get(id) as { first_request_at?: string | null } | undefined;
+  return stored?.first_request_at || null;
+}
+
 export async function resetConnectionBackoff(id: string): Promise<void> {
   if (!id) return;
   const db = getDbInstance() as unknown as DbLike;

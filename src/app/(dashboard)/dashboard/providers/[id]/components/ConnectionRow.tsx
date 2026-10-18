@@ -336,6 +336,15 @@ export default function ConnectionRow({
                   {connection.dailyRequestCount ?? 0}/{connection.rateLimitOverrides.rpd}
                 </span>
               )}
+            {typeof connection.rateLimitOverrides?.rpw === "number" &&
+              connection.rateLimitOverrides.rpw > 0 && (
+                <span
+                  className="text-xs font-mono text-text-muted"
+                  title="Requests used in this account's 7-day window, counted from its first request"
+                >
+                  {connection.weeklyRequestCount ?? 0}/{connection.rateLimitOverrides.rpw}
+                </span>
+              )}
             {codexPlanLabel && (
               <Badge variant="primary" size="sm" className="capitalize">
                 {codexPlanLabel}

@@ -69,6 +69,10 @@ export function ensureProviderConnectionsColumns(db: SqliteDatabase) {
       db.exec("ALTER TABLE provider_connections ADD COLUMN rate_limit_overrides_json TEXT");
       console.log("[DB] Added provider_connections.rate_limit_overrides_json column");
     }
+    if (!columnNames.has("first_request_at")) {
+      db.exec("ALTER TABLE provider_connections ADD COLUMN first_request_at TEXT");
+      console.log("[DB] Added provider_connections.first_request_at column");
+    }
     // `refresh_token` is part of 001_initial_schema.sql, but `CREATE TABLE IF NOT EXISTS`
     // is a no-op on a pre-existing legacy table that predates it — heal it defensively
     // before the index below relies on it, or a very old DB fails startup entirely.

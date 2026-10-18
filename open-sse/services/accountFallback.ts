@@ -1619,6 +1619,7 @@ export function isDailyQuotaExhausted(errorText: string): boolean {
   return (
     lower.includes("today's quota") ||
     lower.includes("daily quota") ||
+    lower.includes("connection weekly quota") ||
     lower.includes("try again tomorrow") ||
     lower.includes("tpd rate limit")
   );

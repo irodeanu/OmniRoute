@@ -28,8 +28,9 @@ export interface ConnectionRowConnection {
   proxyEnabled?: boolean;
   perKeyProxyEnabled?: boolean;
   quotaVisible?: boolean;
-  rateLimitOverrides?: { rpd?: number | null } | null;
+  rateLimitOverrides?: { rpd?: number | null; rpw?: number | null } | null;
   dailyRequestCount?: number;
+  weeklyRequestCount?: number;
   codexAccountPool?: CodexAccountPoolProjection;
 }
 

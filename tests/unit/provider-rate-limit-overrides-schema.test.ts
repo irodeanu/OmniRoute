@@ -50,6 +50,16 @@ test("rateLimitOverrides: rejects rpd above max", () => {
   assert.equal(parse({ rpd: 10_000_001 }).success, false);
 });
 
+test("rateLimitOverrides: accepts rpw", () => {
+  const r = parse({ rpd: 1490, rpw: 8900 });
+  assert.ok(r.success, String(r.error));
+  assert.equal(r.data.rateLimitOverrides.rpw, 8900);
+});
+
+test("rateLimitOverrides: rejects rpw above max", () => {
+  assert.equal(parse({ rpw: 10_000_001 }).success, false);
+});
+
 test("rateLimitOverrides: partial fields", () => {
   const r = parse({ rpm: 60 });
   assert.ok(r.success, String(r.error));

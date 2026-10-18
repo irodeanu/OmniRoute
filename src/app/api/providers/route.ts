@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/db/settings";
 import { resolveResilienceSettings } from "@/lib/resilience/settings";
 import { isConnectionAutoProtected } from "@omniroute/open-sse/services/rateLimitManager/autoProtection.ts";
-import { readConnectionDailyCounts } from "@omniroute/open-sse/services/rateLimitManager/connectionDailyCap.ts";
+import {
+  readConnectionDailyCounts,
+  readConnectionWeeklyCounts,
+} from "@omniroute/open-sse/services/rateLimitManager/connectionDailyCap.ts";
 export const dynamic = "force-dynamic";
 import { getAuditRequestContext, logAuditEvent } from "@/lib/compliance/index";
 import {
@@ -154,6 +157,20 @@ export async function GET(request: Request) {
       })
       .map((connection) => String(connection.id));
     const dailyCounts = await readConnectionDailyCounts(dailyCappedIds);
+    const weeklyEntries = connections
+      .filter((connection) => {
+        const limit = connection.rateLimitOverrides?.rpw;
+        return typeof limit === "number" && limit > 0 && typeof connection.id === "string";
+      })
+      .map((connection) => {
+        const raw = (connection as { firstRequestAt?: unknown }).firstRequestAt;
+        const anchorMs = typeof raw === "string" ? Date.parse(raw) : Number.NaN;
+        return {
+          id: String(connection.id),
+          anchorMs: Number.isFinite(anchorMs) ? anchorMs : null,
+        };
+      });
+    const weeklyCounts = await readConnectionWeeklyCounts(weeklyEntries);
     const safeConnections = connections.map((c) => {
       const providerSpecificData = c.providerSpecificData
         ? sanitizeProviderSpecificDataForResponse(c.providerSpecificData)
@@ -168,6 +185,10 @@ export async function GET(request: Request) {
         dailyRequestCount:
           typeof c.id === "string" && Object.prototype.hasOwnProperty.call(dailyCounts, c.id)
             ? dailyCounts[c.id]
+            : undefined,
+        weeklyRequestCount:
+          typeof c.id === "string" && Object.prototype.hasOwnProperty.call(weeklyCounts, c.id)
+            ? weeklyCounts[c.id]
             : undefined,
         rateLimitAutoProtected: isConnectionAutoProtected(
           {

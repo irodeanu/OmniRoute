@@ -38,7 +38,10 @@ import { isConnectionAutoProtected } from "./rateLimitManager/autoProtection";
 import { buildOverrideUpdates, loadOverrideMap } from "./rateLimitManager/overrideUpdates";
 import {
   connectionDailyCapResult,
-  reserveConnectionDailyRequest,
+  connectionWeeklyCapResult,
+  ensureConnectionWeekAnchor,
+  loadConnectionWeekAnchors,
+  reserveConnectionRequestCaps,
   resetConnectionDailyCapForTests,
 } from "./rateLimitManager/connectionDailyCap";
 import {
@@ -421,6 +424,25 @@ function trackAsyncOperation<T>(promise: Promise<T>): Promise<T> {
   return promise;
 }
 
+async function persistConnectionWeekAnchor(
+  connectionId: string,
+  atMs: number
+): Promise<number | null> {
+  try {
+    const { recordConnectionFirstRequestAt } = await import("@/lib/db/providers");
+    const stored = recordConnectionFirstRequestAt(connectionId, new Date(atMs).toISOString());
+    if (!stored) return null;
+    const parsed = Date.parse(stored);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch (error) {
+    console.error(
+      "[RATE-LIMIT] failed to store first request time:",
+      error instanceof Error ? error.message : error
+    );
+    return null;
+  }
+}
+
 /**
  * Initialize rate limit protection from persisted connection settings.
  * Called once on app startup.
@@ -446,6 +468,7 @@ export async function initializeRateLimits() {
     // an entry in either providerQuotaOverrides or PROVIDER_DEFAULT_RATE_LIMITS.
     setProviderQuotaOverrides(resilience.providerQuotaOverrides);
     loadOverrideMap(connectionRateLimitOverrides, connections as Array<Record<string, unknown>>);
+    loadConnectionWeekAnchors(connections as Array<Record<string, unknown>>);
     const { explicitCount, autoCount } = reconcileEnabledConnections(
       connections as unknown[],
       currentRequestQueueSettings
@@ -682,16 +705,32 @@ export async function withRateLimit(
     throw err;
   }
 
-  // rpd is not a Bottleneck reservoir (that slot is the per-minute cap). It is
-  // a separate day counter on the connection id, shared by every model family.
-  const dailyLimit = connectionRateLimitOverrides.get(connectionId)?.rpd;
-  if (typeof connectionId === "string" && connectionId && typeof dailyLimit === "number") {
-    const decision = await reserveConnectionDailyRequest(connectionId, dailyLimit);
+  // rpd and rpw are not Bottleneck reservoirs (that slot is the per-minute cap).
+  // rpd is a UTC-day counter. rpw is a 7-day counter that starts at this
+  // account's first counted request. A weekly reject does not consume a day.
+  const capOverrides = connectionRateLimitOverrides.get(connectionId);
+  const dailyLimit = capOverrides?.rpd;
+  const weeklyLimit = capOverrides?.rpw;
+  const hasDailyCap = typeof dailyLimit === "number";
+  const hasWeeklyCap = typeof weeklyLimit === "number";
+  const weeklyActive = hasWeeklyCap && typeof weeklyLimit === "number" && weeklyLimit > 0;
+  const weekAnchorMs =
+    weeklyActive && typeof connectionId === "string" && connectionId
+      ? await ensureConnectionWeekAnchor(connectionId, Date.now(), persistConnectionWeekAnchor)
+      : null;
+  if (typeof connectionId === "string" && connectionId && (hasDailyCap || hasWeeklyCap)) {
+    const decision = await reserveConnectionRequestCaps(connectionId, {
+      rpd: hasDailyCap ? dailyLimit : 0,
+      rpw: hasWeeklyCap ? weeklyLimit : 0,
+      weekAnchorMs,
+    });
     if (!decision.allowed) {
       logRateLimit(
-        `[RATE-LIMIT] ${connectionId} daily quota ${decision.count}/${decision.limit}`
+        `[RATE-LIMIT] ${connectionId} ${decision.period} quota ${decision.count}/${decision.limit}`
       );
-      return connectionDailyCapResult(decision);
+      return decision.period === "week"
+        ? connectionWeeklyCapResult(decision)
+        : connectionDailyCapResult(decision);
     }
   }
 

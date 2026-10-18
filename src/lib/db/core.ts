@@ -261,6 +261,7 @@ const SCHEMA_SQL = `
     quota_visible INTEGER NOT NULL DEFAULT 1,
     quota_window_thresholds_json TEXT,
     rate_limit_overrides_json TEXT,
+    first_request_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );

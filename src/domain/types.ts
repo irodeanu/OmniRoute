@@ -31,6 +31,7 @@
  * @property {object} [rateLimitOverrides] - Per-connection rate limit overrides
  * @property {number} [rateLimitOverrides.rpm] - Requests per minute limit
  * @property {number} [rateLimitOverrides.rpd] - Requests per day limit
+ * @property {number} [rateLimitOverrides.rpw] - Requests per Monday-UTC week limit
  * @property {number} [rateLimitOverrides.tpm] - Tokens per minute limit
  * @property {number} [rateLimitOverrides.tpd] - Tokens per day limit
  * @property {number} [rateLimitOverrides.minTime] - Minimum ms between requests

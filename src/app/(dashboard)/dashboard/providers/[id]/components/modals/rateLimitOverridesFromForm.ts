@@ -23,8 +23,8 @@ const NUMERIC_FIELDS = ["rpm", "rpd", "tpm", "tpd", "minTime", "maxWaitMs"] as c
  * (`model=cap`, one per line): blank = no caps; a malformed entry is returned
  * in `invalidModelConcurrency` (the ICU values for the localized save error)
  * so operator intent is never silently dropped on save. `existing` carries
- * over overrides the form has no field for (`executionMaxWaitMs`, set via the
- * API) so a dashboard save keeps them.
+ * over overrides the form has no field for (`executionMaxWaitMs`, `rpw`, set
+ * via the API) so a dashboard save keeps them.
  */
 export function buildRateLimitOverridesFromForm(
   form: RateLimitOverridesFormFields,
@@ -41,6 +41,7 @@ export function buildRateLimitOverridesFromForm(
     overrides.maxConcurrent = Number(form.rateLimitMaxConcurrent);
   if (typeof existing?.executionMaxWaitMs === "number")
     overrides.executionMaxWaitMs = existing.executionMaxWaitMs;
+  if (typeof existing?.rpw === "number") overrides.rpw = existing.rpw;
   const parsed = parseModelConcurrencyInput(form.modelConcurrency);
   if (parsed.invalidEntry !== null)
     return {

@@ -102,6 +102,14 @@ describe("buildRateLimitOverridesFromForm", () => {
     assert.deepEqual(result, { overrides: { rpm: 60, executionMaxWaitMs: 300000 } });
   });
 
+  it("preserves an API-configured weekly cap the form has no field for", () => {
+    const result = buildRateLimitOverridesFromForm(
+      { ...blankForm, rpd: "1490", rpm: "35" },
+      { rpw: 8900, rpd: 2200 }
+    );
+    assert.deepEqual(result, { overrides: { rpd: 1490, rpm: 35, rpw: 8900 } });
+  });
+
   it("does not resurrect fields the operator cleared in the form", () => {
     const result = buildRateLimitOverridesFromForm(blankForm, {
       rpm: 10,

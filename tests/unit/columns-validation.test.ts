@@ -43,3 +43,9 @@ test("sanitizeRateLimitOverrides accepts executionMaxWaitMs (schema/allowlist pa
   assert.deepEqual(r.rejected, []);
   assert.deepEqual(r.sanitized, { maxWaitMs: 30000, executionMaxWaitMs: 300000 });
 });
+
+test("sanitizeRateLimitOverrides accepts rpw beside rpd", () => {
+  const r = sanitizeRateLimitOverrides({ rpd: 1490, rpw: 8900, rpm: 35 });
+  assert.deepEqual(r.rejected, []);
+  assert.deepEqual(r.sanitized, { rpd: 1490, rpw: 8900, rpm: 35 });
+});
