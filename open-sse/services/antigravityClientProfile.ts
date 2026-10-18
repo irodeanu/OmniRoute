@@ -58,19 +58,11 @@ export function removeHeaderCaseInsensitive(headers: Record<string, string>, nam
   }
 }
 
-function getProjectHeaderValue(body: unknown): string | null {
-  const project =
-    body && typeof body === "object" ? (body as Record<string, unknown>).project : null;
-  if (typeof project !== "string" || project.trim().length === 0) return null;
-  if (project === "test-project" || project === "project-id") return null;
-  return project;
-}
-
 /** Apply the selected official client identity to a Cloud Code content request. */
 export function applyAntigravityClientProfileHeaders(
   headers: Record<string, string>,
   credentials: AntigravityProfileCredentials | null | undefined,
-  body: unknown
+  _body?: unknown
 ): AntigravityClientProfile {
   const profile = getAntigravityClientProfile(credentials);
   const identityHeaders = getAntigravityContentHeaders(profile);
@@ -81,11 +73,14 @@ export function applyAntigravityClientProfileHeaders(
     removeHeaderCaseInsensitive(headers, name);
   }
 
-  const project = getProjectHeaderValue(body);
+  // Never send `x-goog-user-project`. The official Antigravity IDE/CLI carry the
+  // Cloud Code project only in the envelope body (`project`), not as a GCP
+  // quota/billing header. Consumer accounts are assigned Google's shared
+  // `aicode-consumers` project, on which the caller has no serviceusage role, so
+  // the header produced a 403 USER_PROJECT_DENIED on every request and the old
+  // retry-without-header fallback doubled every upstream send (a non-client
+  // 403->200 signature on each account). Strip any inbound copy as well.
   removeHeaderCaseInsensitive(headers, "x-goog-user-project");
-  if (project) {
-    headers["x-goog-user-project"] = project;
-  }
 
   return profile;
 }

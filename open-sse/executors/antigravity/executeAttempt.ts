@@ -19,10 +19,7 @@ import {
 } from "../../config/constants.ts";
 import { injectCreditsField, handleCreditsFailure } from "../../services/antigravityCredits.ts";
 import { sanitizeAntigravityToolPayload } from "../../config/toolCloaking.ts";
-import {
-  applyAntigravityClientProfileHeaders,
-  removeHeaderCaseInsensitive,
-} from "../../services/antigravityClientProfile.ts";
+import { applyAntigravityClientProfileHeaders } from "../../services/antigravityClientProfile.ts";
 import * as prl from "../../utils/providerRequestLogging.ts";
 import { generateAntigravityRequestId } from "../../services/antigravityIdentity.ts";
 import {
@@ -308,10 +305,10 @@ function dumpAntigravityRequestDebug(
 
 /**
  * Send one Antigravity request attempt: serialize + apply the client-profile
- * fingerprint, debug-dump the outgoing envelope, fetch with a readiness timeout,
- * and transparently retry once without `x-goog-user-project` on a 403 (some
- * projects reject that header). Returns the (possibly 403-retried) response
- * plus the headers actually used for it.
+ * fingerprint, debug-dump the outgoing envelope, and fetch with a readiness
+ * timeout. Exactly one physical send: `x-goog-user-project` is never set (see
+ * applyAntigravityClientProfileHeaders), so there is no 403 retry-without-header.
+ * Returns the response plus the headers actually used for it.
  */
 export async function sendAntigravityRequest(
   provider: string,
@@ -362,25 +359,6 @@ export async function sendAntigravityRequest(
     body: serializedRequest.bodyString,
     signal,
   });
-
-  if (response.status === HTTP_STATUS.FORBIDDEN && finalHeaders["x-goog-user-project"]) {
-    const retryHeaders = { ...finalHeaders };
-    removeHeaderCaseInsensitive(retryHeaders, "x-goog-user-project");
-    log.debug("RETRY", "403 with x-goog-user-project, retrying once without it");
-    await prl.captureCurrentProviderBody(url, retryHeaders, serializedRequest.bodyString, log);
-    const retryPhysicalSendOrdinal = ++physicalSendCounter.value;
-    log.debug(
-      "TELEMETRY",
-      `[Antigravity] PhysicalSend - RequestId: ${correlationId ?? "none"}, URL: ${url}, Model: ${model}, PhysicalSend: ${retryPhysicalSendOrdinal}, RetryAttempt: ${retryAttempt}, Cause: x-goog-user-project-403`
-    );
-    response = await fetchAntigravityWithReadinessTimeout(url, {
-      method: "POST",
-      headers: retryHeaders,
-      body: serializedRequest.bodyString,
-      signal,
-    });
-    finalHeaders = retryHeaders;
-  }
 
   if (!response.ok) {
     log.warn(

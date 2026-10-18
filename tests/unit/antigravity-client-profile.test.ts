@@ -77,6 +77,7 @@ function assertIdentityHeadersAbsent(headers: Record<string, string>): void {
     "x-vscode-sessionid",
     "X-Goog-Api-Client",
     "Client-Metadata",
+    "x-goog-user-project",
   ]) {
     assert.equal(normalized.get(name), null, `${name} must be removed`);
   }
@@ -92,6 +93,7 @@ function applyProfile(profile: AntigravityClientProfile): Record<string, string>
     "x-vscode-sessionid": "legacy-session",
     "X-Goog-Api-Client": "legacy-api-client",
     "client-metadata": "legacy-metadata",
+    "X-Goog-User-Project": "legacy-project",
   };
 
   applyAntigravityClientProfileHeaders(
@@ -117,8 +119,9 @@ test("content header application emits IDE and CLI identities and strips fake he
   );
   assertIdentityHeadersAbsent(ideHeaders);
   assertIdentityHeadersAbsent(cliHeaders);
-  assert.equal(ideHeaders["x-goog-user-project"], "project-1");
-  assert.equal(cliHeaders["x-goog-user-project"], "project-1");
+  // Official clients carry the project only in the body, never as a quota header.
+  assert.equal(ideHeaders["x-goog-user-project"], undefined);
+  assert.equal(cliHeaders["x-goog-user-project"], undefined);
 });
 
 test("public request envelopes never infer the internal jetski identity from email", () => {
